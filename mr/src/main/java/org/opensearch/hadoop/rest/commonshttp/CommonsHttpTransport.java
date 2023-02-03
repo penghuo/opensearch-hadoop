@@ -28,6 +28,19 @@
  */
 package org.opensearch.hadoop.rest.commonshttp;
 
+import com.amazonaws.DefaultRequest;
+import com.amazonaws.auth.AWS4Signer;
+import com.amazonaws.auth.AWSCredentialsProvider;
+import com.amazonaws.auth.DefaultAWSCredentialsProviderChain;
+import com.amazonaws.http.HttpMethodName;
+import com.amazonaws.thirdparty.apache.http.client.utils.URLEncodedUtils;
+import com.amazonaws.util.SdkHttpUtils;
+import java.io.UnsupportedEncodingException;
+import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.TreeMap;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.opensearch.hadoop.OpenSearchHadoopIllegalArgumentException;
@@ -83,6 +96,11 @@ import org.opensearch.hadoop.thirdparty.apache.commons.httpclient.params.HttpMet
 import org.opensearch.hadoop.thirdparty.apache.commons.httpclient.protocol.Protocol;
 import org.opensearch.hadoop.thirdparty.apache.commons.httpclient.protocol.ProtocolSocketFactory;
 import org.opensearch.hadoop.thirdparty.apache.commons.httpclient.protocol.SecureProtocolSocketFactory;
+import org.opensearch.hadoop.thirdparty.google.common.base.Joiner;
+import org.opensearch.hadoop.thirdparty.google.common.base.Splitter;
+import org.opensearch.hadoop.thirdparty.google.common.collect.ImmutableList;
+import org.opensearch.hadoop.thirdparty.google.common.collect.ImmutableMap;
+import org.opensearch.hadoop.thirdparty.google.common.collect.Multimap;
 import org.opensearch.hadoop.util.ByteSequence;
 import org.opensearch.hadoop.util.ReflectionUtils;
 import org.opensearch.hadoop.util.StringUtils;
@@ -686,6 +704,10 @@ public class CommonsHttpTransport implements Transport, StatsAware {
             log.trace(String.format("Tx %s[%s]@[%s][%s]?[%s] w/ payload [%s]", proxyInfo, request.method().name(), httpInfo, request.path(), request.params(), request.body()));
         }
 
+        if (settings.getAwsSigV4Enabled()) {
+            awsSigV4SignRequest(request, http);
+        }
+
         if (executingProvider != null) {
             final HttpMethod method = http;
             executingProvider.getUser().doAs(new PrivilegedExceptionAction<Object>() {
@@ -714,6 +736,48 @@ public class CommonsHttpTransport implements Transport, StatsAware {
 
         // the request URI is not set (since it is retried across hosts), so use the http info instead for source
         return new SimpleResponse(http.getStatusCode(), new ResponseInputStream(http), httpInfo, headers);
+    }
+
+    private void awsSigV4SignRequest(Request request, HttpMethod http) {
+        String awsRegion = settings.getAwsSigV4Region();
+        String awsServiceName = settings.getAwsSigV4ServiceName();
+
+        AWSCredentialsProvider credentialsProvider = DefaultAWSCredentialsProviderChain.getInstance();
+        AWS4Signer aws4Signer = new AWS4Signer();
+        aws4Signer.setRegionName(awsRegion);
+        aws4Signer.setServiceName(awsServiceName);
+
+        DefaultRequest<Void> req = new DefaultRequest<>(awsServiceName);
+        req.setHttpMethod(HttpMethodName.valueOf(request.method().name()));
+
+        StringBuilder url = new StringBuilder();
+        url.append(httpInfo);
+        String path = request.path().toString();
+        req.setResourcePath(path);
+
+        if (request.params() != null) {
+            URLEncodedUtils.parse(request.params().toString(), StandardCharsets.UTF_8)
+                .forEach(pair -> req.addParameter(pair.getName(), pair.getValue()));
+        }
+
+        try {
+            req.setEndpoint(new java.net.URI(url.toString()));
+        } catch (URISyntaxException e) {
+            throw new IllegalArgumentException("Invalid request URI: " + request.uri().toString());
+        }
+
+        if (request.body() != null) {
+            req.setContent(request.body().toInputStream());
+        }
+        req.addHeader("x-amz-content-sha256", "required");
+
+        aws4Signer.sign(req, credentialsProvider.getCredentials());
+
+        final ImmutableMap.Builder<String, String> signerHeaders = ImmutableMap.builder();
+
+        for (Map.Entry<String, String> entry : req.getHeaders().entrySet()) {
+            http.setRequestHeader(entry.getKey(), entry.getValue());
+        }
     }
 
     /**

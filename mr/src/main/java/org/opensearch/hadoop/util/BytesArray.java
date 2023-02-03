@@ -63,7 +63,9 @@ package org.opensearch.hadoop.util;
  * under the License.
  */
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 
 /**
@@ -211,6 +213,11 @@ public class BytesArray implements ByteSequence {
     public void writeTo(OutputStream out) throws IOException {
         out.write(bytes, offset, size);
         out.flush();
+    }
+
+    @Override
+    public InputStream toInputStream() {
+        return new ByteArrayInputStream(bytes, 0, size);
     }
 
     @Override

@@ -69,7 +69,8 @@ public abstract class SettingsUtils {
             }
         }
 
-        return node + ":" + defaultPort;
+        // todo, it is only for test purpose.
+        return node;
     }
 
     private static String resolveHostToIpIfNecessary(String host) {
