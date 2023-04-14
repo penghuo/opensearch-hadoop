@@ -53,7 +53,7 @@ public abstract class SettingsUtils {
         List<String> list = StringUtils.tokenize(nodes);
         for (int i = 0; i < list.size(); i++) {
             String nodeIp = (resolveHostNames ? resolveHostToIpIfNecessary(list.get(i)) : list.get(i));
-            list.set(i, qualifyNode(nodeIp, defaultPort));
+            list.set(i, nodeIp);
         }
         return list;
     }

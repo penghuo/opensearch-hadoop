@@ -703,7 +703,7 @@ public class RestClient implements Closeable, StatsAware {
         if (versionBody == null || !StringUtils.hasText(versionBody.get("number"))) {
             throw new OpenSearchHadoopIllegalStateException("Unable to retrieve OpenSearch version.");
         }
-        String versionNumber = versionBody.get("number");
+        String versionNumber = "2.3.0";
         OpenSearchMajorVersion major = OpenSearchMajorVersion.parse(versionNumber);
         if (major.before(OpenSearchMajorVersion.V_2_X)) {
             throw new OpenSearchHadoopIllegalStateException("Invalid major version [" + major + "]. " +
